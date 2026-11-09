@@ -1,0 +1,45 @@
+{
+  "run_ts": "20261109T191157",
+  "rows_in_db": 10000,
+  "quality_checks": {
+    "completeness_rows_loaded_equal_rows_sent": true,
+    "uniqueness_transaction_id": true,
+    "validity_label_is_binary": true,
+    "completeness_no_null_amount": true
+  },
+  "merge": {
+    "path": "/repo/artifacts/airflow/fraud_runs/20261109T191157/merged.csv",
+    "n_rows": 10000,
+    "n_columns": 52,
+    "unmatched_customers": 0,
+    "tx_before_signup": 282
+  },
+  "fraud_rate": 0.0306,
+  "models": [
+    {
+      "model": "logistic_regression",
+      "uses_leaky_column": false,
+      "f1": 0.0705,
+      "roc_auc": 0.5938,
+      "pr_auc": 0.0403,
+      "n_features": 80
+    },
+    {
+      "model": "random_forest",
+      "uses_leaky_column": false,
+      "f1": 0.0,
+      "roc_auc": 0.524,
+      "pr_auc": 0.0338,
+      "n_features": 80
+    },
+    {
+      "model": "logistic_regression_WITH_LEAK",
+      "uses_leaky_column": true,
+      "f1": 1.0,
+      "roc_auc": 1.0,
+      "pr_auc": 1.0,
+      "n_features": 81
+    }
+  ],
+  "agent_dataset": "/repo/datasets/airflow/fraud_clean_latest.csv"
+}

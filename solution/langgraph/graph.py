@@ -1,10 +1,17 @@
 """Simple research loop — one self-contained LangGraph file.
 
-Flow:
-  START → data_scientist → hypothesis → ml_engineer → judge
-            ↑__________________________________|
-            |   (revise: memory → context → hypothesis again)
-            └── accept/stop → holdout_eval → END
+Flow (modified for the IDS706 Week 11 assignment):
+  START → data_scientist → data_quality_auditor → hypothesis → ml_engineer
+            → (imbalanced? threshold_tuner) → judge
+                         ↑__________________________________________|
+                         |   (revise: memory → context → hypothesis again)
+                         └── accept/stop → holdout_eval → END
+
+New agents (vs. the class version):
+  * data_quality_auditor — code-only checks with evidence: single-feature ROC-AUC
+    leakage scan, id/constant columns, duplicate rows, class imbalance.
+  * threshold_tuner — runs only when the auditor flags class imbalance; picks the
+    decision threshold that maximizes validation F1 (holdout then uses that threshold).
 
 LLM / train helpers live in loop_runtime.py (Cursor SDK + OpenRouter + heuristics).
 """
@@ -18,8 +25,15 @@ import sys
 from pathlib import Path
 from typing import Annotated, TypedDict
 
+import numpy as np
 import pandas as pd
 from langgraph.graph import END, START, StateGraph
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import accuracy_score, average_precision_score, f1_score, roc_auc_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
 
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[1]
@@ -32,6 +46,7 @@ from loop_runtime import (  # noqa: E402
     DEFAULT_MODEL,
     FAMILIES,
     _SPEC_SCHEMA_HINT,
+    _build_model,
     _coerce_experiment_spec,
     _fit_score,
     _heuristic_plan,
@@ -59,6 +74,8 @@ class SimpleLoopState(TypedDict, total=False):
     holdout_frac: float
     model: str  # OpenRouter / Cursor model id from the UI / env
     profile: dict
+    data_audit: dict  # evidence from data_quality_auditor
+    imbalanced: bool  # set by the auditor; decides whether threshold_tuner runs
     brief: dict
     hypothesis: dict  # conceptual plan from hypothesis_generator (not HPT numbers)
     experiment_spec: dict  # concrete HPT config from ml_engineer
@@ -148,6 +165,181 @@ def node_data_scientist(state: SimpleLoopState) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# NEW AGENT 1: data_quality_auditor (pure code, no LLM)
+# ---------------------------------------------------------------------------
+LEAKAGE_AUC = 0.95        # a single column this predictive is almost surely leaking the label
+IMBALANCE_RATE = 0.20     # minority class below 20% -> treat the task as imbalanced
+
+
+def node_data_quality_auditor(state: SimpleLoopState) -> dict:
+    """Verify the Data Scientist's profile with measured evidence.
+
+    The LLM profile can miss leaky columns (it only sees names and a few rows).
+    This agent measures them: each numeric column is scored alone with ROC-AUC
+    against the target. It also flags id-like/constant columns, duplicate rows and
+    class imbalance, then merges every finding into profile.recommended_drops so
+    the hypothesis + ML engineer agents never train on them.
+    """
+    df = pd.read_csv(state["dataset_path"])
+    target = state["target_column"]
+    profile = dict(state.get("profile") or {})
+    y = df[target]
+
+    # Class balance
+    rate = float(y.mean()) if pd.api.types.is_numeric_dtype(y) else None
+    minority = min(rate, 1 - rate) if rate is not None else None
+    imbalanced = bool(minority is not None and minority < IMBALANCE_RATE)
+
+    # Leakage scan: single-feature ROC-AUC (only meaningful for a binary target)
+    leaky: dict[str, float] = {}
+    if y.nunique() == 2:
+        for col in df.columns:
+            if col == target or not pd.api.types.is_numeric_dtype(df[col]):
+                continue
+            x = df[col].fillna(df[col].median())
+            if x.nunique() < 2:
+                continue
+            auc = float(roc_auc_score(y, x))
+            auc = max(auc, 1 - auc)  # direction does not matter
+            if auc >= LEAKAGE_AUC:
+                leaky[col] = round(auc, 4)
+
+    # Structural problems: ids / near-unique text, constant columns, duplicated rows
+    n = len(df)
+    id_like = [
+        c for c in df.columns
+        if c != target
+        and (c.lower().endswith("_id") or (not pd.api.types.is_numeric_dtype(df[c]) and df[c].nunique() > 0.9 * n))
+    ]
+    constant = [c for c in df.columns if c != target and df[c].nunique(dropna=False) <= 1]
+    dup_rows = int(df.duplicated().sum())
+
+    # Merge findings into the profile used by the downstream agents
+    drops = list(dict.fromkeys(
+        list(profile.get("recommended_drops") or []) + list(leaky) + id_like + constant
+    ))
+    suspects = list(dict.fromkeys(list(profile.get("leakage_suspects") or []) + list(leaky)))
+    profile["recommended_drops"] = [c for c in drops if c in df.columns and c != target]
+    profile["leakage_suspects"] = suspects
+    notes = list(profile.get("notes") or [])
+    if leaky:
+        notes.append(f"auditor: leaky columns by single-feature AUC >= {LEAKAGE_AUC}: {leaky}")
+    if imbalanced:
+        notes.append(f"auditor: imbalanced target (minority rate {minority:.3f}) -> tune threshold, judge by F1")
+    profile["notes"] = notes
+
+    audit = {
+        "target_rate": round(rate, 4) if rate is not None else None,
+        "imbalanced": imbalanced,
+        "leaky_columns_auc": leaky,
+        "id_like_columns": id_like,
+        "constant_columns": constant,
+        "duplicate_rows": dup_rows,
+        "final_drops": profile["recommended_drops"],
+    }
+    note = f"leaky={list(leaky) or 'none'} · imbalanced={imbalanced} · drops={len(profile['recommended_drops'])}"
+    return {
+        "profile": profile,
+        "data_audit": audit,
+        "imbalanced": imbalanced,
+        "steps": [{"node": "data_quality_auditor", "note": note, "output": audit}],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Probability-level fit helper (same splits as loop_runtime._fit_score)
+# ---------------------------------------------------------------------------
+def _fit_predict_proba(df, target, spec, seed, holdout_frac, *, on_holdout):
+    """Fit the spec's pipeline and return (y_eval, positive-class probabilities)."""
+    y = df[target]
+    drops = [c for c in (spec.get("drop_columns") or []) if c in df.columns and c != target]
+    X = df.drop(columns=[target, *drops], errors="ignore")
+    strat = y if y.nunique() > 1 else None
+    X_tmp, X_hold, y_tmp, y_hold = train_test_split(
+        X, y, test_size=holdout_frac, random_state=seed, stratify=strat
+    )
+    if on_holdout:
+        X_train, y_train, X_eval, y_eval = X_tmp, y_tmp, X_hold, y_hold
+    else:
+        X_train, X_eval, y_train, y_eval = train_test_split(
+            X_tmp, y_tmp, test_size=0.25, random_state=seed,
+            stratify=y_tmp if y_tmp.nunique() > 1 else None,
+        )
+    num_cols = [c for c in X_train.columns if pd.api.types.is_numeric_dtype(X_train[c])]
+    cat_cols = [c for c in X_train.columns if c not in num_cols]
+    pre = ColumnTransformer([
+        ("num", SimpleImputer(strategy="median"), num_cols),
+        ("cat", Pipeline([("imp", SimpleImputer(strategy="most_frequent")),
+                          ("oh", OneHotEncoder(handle_unknown="ignore"))]), cat_cols),
+    ])
+    family = str(spec.get("model_family") or "logistic_regression")
+    pipe = Pipeline([("pre", pre), ("clf", _build_model(family, dict(spec.get("hyperparameters") or {})))])
+    pipe.fit(X_train, y_train)
+    return y_eval, pipe.predict_proba(X_eval)[:, 1]
+
+
+# ---------------------------------------------------------------------------
+# NEW AGENT 2: threshold_tuner (pure code; only reached when data is imbalanced)
+# ---------------------------------------------------------------------------
+THRESHOLD_GRID = np.round(np.arange(0.05, 0.96, 0.05), 2)
+
+
+def node_threshold_tuner(state: SimpleLoopState) -> dict:
+    """With rare positives the default 0.5 cut-off is rarely F1-optimal.
+
+    Refit the ML engineer's spec, score every threshold on the validation split,
+    keep the best one in the spec (holdout reuses it) and update best_val_f1.
+    """
+    result = dict(state.get("execution_result") or {})
+    spec = dict(state.get("experiment_spec") or {})
+    df = pd.read_csv(state["dataset_path"])
+    target = state["target_column"]
+    seed = int(state.get("seed") or 42)
+    holdout_frac = float(state.get("holdout_frac") or 0.2)
+
+    y_val, proba = _fit_predict_proba(df, target, spec, seed, holdout_frac, on_holdout=False)
+    scores = {float(t): float(f1_score(y_val, (proba >= t).astype(int), zero_division=0)) for t in THRESHOLD_GRID}
+    best_t = max(scores, key=scores.get)
+    default_f1 = float((result.get("validation_metrics") or {}).get("f1") or 0)
+    tuned_f1 = scores[best_t]
+
+    metrics = dict(result.get("validation_metrics") or {})
+    metrics.update({
+        "f1_at_0.5": round(default_f1, 4),
+        "roc_auc": round(float(roc_auc_score(y_val, proba)), 4),
+        "pr_auc": round(float(average_precision_score(y_val, proba)), 4),
+    })
+    if tuned_f1 > default_f1:
+        spec["decision_threshold"] = best_t
+        metrics["f1"] = tuned_f1
+        metrics["decision_threshold"] = best_t
+    result["validation_metrics"] = metrics
+
+    patch: dict = {"execution_result": result, "experiment_spec": spec}
+    # Keep best_* consistent: ml_engineer may already have stored this spec with its untuned score
+    best = state.get("best_spec") or {}
+    same_spec = best.get("experiment_id") == spec.get("experiment_id")
+    if same_spec or metrics["f1"] > float(state.get("best_val_f1") or -1):
+        patch["best_val_f1"] = float(metrics["f1"])
+        patch["best_spec"] = spec
+
+    note = (f"threshold {spec.get('decision_threshold', 0.5)} · f1 {default_f1:.3f} → {metrics['f1']:.3f}"
+            f" · roc_auc {metrics['roc_auc']:.3f}")
+    patch["steps"] = [{
+        "node": "threshold_tuner", "note": note, "f1": float(metrics["f1"]),
+        "output": {"threshold_f1_curve": scores, "chosen_threshold": spec.get("decision_threshold", 0.5),
+                   "validation_metrics": metrics},
+    }]
+    return patch
+
+
+def route_after_ml_engineer(state: SimpleLoopState) -> str:
+    """Adaptive routing: only imbalanced data with a successful run goes to the tuner."""
+    ok = (state.get("execution_result") or {}).get("status") == "succeeded"
+    return "tune" if ok and state.get("imbalanced") else "judge"
+
+
 def node_hypothesis(state: SimpleLoopState) -> dict:
     """Conceptual next experiment from DS profile + Judge feedback — no HPT numbers."""
     profile = state.get("profile") or {}
@@ -159,6 +351,19 @@ def node_hypothesis(state: SimpleLoopState) -> dict:
     plan = _heuristic_plan(profile, history, verdict)
     used_llm = False
     note = "heuristic plan"
+
+    # MODIFIED: stagnation rule. If the last two cycles used the same model family and
+    # F1 moved by less than 0.01, stop tuning it and switch family (avoids an endless C sweep).
+    recent = [h for h in history if isinstance(h, dict)][-2:]
+    if len(recent) == 2:
+        fams = {h.get("model_family") for h in recent}
+        f1s = [float(h.get("f1") or 0) for h in recent]
+        if len(fams) == 1 and abs(f1s[1] - f1s[0]) < 0.01:
+            tried = list(dict.fromkeys(h.get("model_family") for h in history if isinstance(h, dict)))
+            plan["focus"] = "model_family_switch"
+            plan["direction"] = f"F1 plateaued on {recent[-1].get('model_family')}; switch model family."
+            plan["avoid_repeats"] = tried
+            note = "heuristic plan · stagnation -> family switch"
 
     if llm_configured(model):
         system = (
@@ -515,7 +720,20 @@ def node_holdout(state: SimpleLoopState) -> dict:
     holdout_frac = float(state.get("holdout_frac") or 0.2)
     if _validate_spec(spec):
         spec = _repair_heuristic(dict(spec), "invalid best_spec")
-    metrics = _fit_score(df, target, spec, seed, holdout_frac, on_holdout=True)
+    # Score with probabilities so the tuned threshold (if any) is applied, and
+    # report threshold-free metrics (ROC-AUC, PR-AUC) that suit imbalanced data.
+    threshold = float(spec.get("decision_threshold", 0.5))
+    y_hold, proba = _fit_predict_proba(df, target, spec, seed, holdout_frac, on_holdout=True)
+    pred = (proba >= threshold).astype(int)
+    metrics = {
+        "f1": float(f1_score(y_hold, pred, zero_division=0)),
+        "accuracy": float(accuracy_score(y_hold, pred)),
+        "roc_auc": float(roc_auc_score(y_hold, proba)) if y_hold.nunique() > 1 else None,
+        "pr_auc": float(average_precision_score(y_hold, proba)) if y_hold.nunique() > 1 else None,
+        "decision_threshold": threshold,
+        "positive_rate": float(y_hold.mean()),
+        "n_holdout": int(len(y_hold)),
+    }
     return {
         "holdout_metrics": metrics,
         "stop_reason": "finalize",
@@ -542,17 +760,26 @@ def build_graph():
     g = StateGraph(SimpleLoopState)
 
     g.add_node("data_scientist", node_data_scientist)
+    g.add_node("data_quality_auditor", node_data_quality_auditor)   # NEW
     g.add_node("hypothesis_generator", node_hypothesis)
     g.add_node("ml_engineer", node_ml_engineer)
+    g.add_node("threshold_tuner", node_threshold_tuner)             # NEW
     g.add_node("judge", node_judge)
     g.add_node("memory_writer", node_memory_writer)
     g.add_node("context_builder", node_context_builder)
     g.add_node("holdout_eval", node_holdout)
 
     g.add_edge(START, "data_scientist")
-    g.add_edge("data_scientist", "hypothesis_generator")
+    g.add_edge("data_scientist", "data_quality_auditor")
+    g.add_edge("data_quality_auditor", "hypothesis_generator")
     g.add_edge("hypothesis_generator", "ml_engineer")
-    g.add_edge("ml_engineer", "judge")
+    # NEW conditional edge: imbalanced data -> threshold_tuner, otherwise straight to judge
+    g.add_conditional_edges(
+        "ml_engineer",
+        route_after_ml_engineer,
+        {"tune": "threshold_tuner", "judge": "judge"},
+    )
+    g.add_edge("threshold_tuner", "judge")
     g.add_conditional_edges(
         "judge",
         route_after_judge,
@@ -570,6 +797,8 @@ def build_graph():
 REQUIRED_NODES = frozenset(
     {
         "data_scientist",
+        "data_quality_auditor",
+        "threshold_tuner",
         "hypothesis_generator",
         "ml_engineer",
         "judge",
@@ -653,6 +882,7 @@ def _finalize_payload(final: dict) -> dict:
         "verdict": final.get("verdict"),
         "stop_reason": final.get("stop_reason"),
         "profile": final.get("profile"),
+        "data_audit": final.get("data_audit"),
         "memory": final.get("memory"),
         "model": final.get("model"),
         "steps": final.get("steps") or [],
@@ -680,7 +910,7 @@ def run_solution_loop(
         holdout_frac=holdout_frac,
         model=model,
     )
-    final = app.invoke(initial, config={"recursion_limit": 8 + max_cycles * 6})
+    final = app.invoke(initial, config={"recursion_limit": 10 + max_cycles * 8})
     return _finalize_payload(final)
 
 
@@ -716,7 +946,7 @@ def stream_solution_loop(
     last_node: str | None = None
     try:
         for update in app.stream(
-            initial, stream_mode="updates", config={"recursion_limit": 8 + max_cycles * 6}
+            initial, stream_mode="updates", config={"recursion_limit": 10 + max_cycles * 8}
         ):
             if not isinstance(update, dict):
                 continue

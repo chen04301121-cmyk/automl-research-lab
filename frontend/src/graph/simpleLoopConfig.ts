@@ -3,8 +3,10 @@
 export type SimpleLoopNodeId =
   | 'dataset'
   | 'data_scientist'
+  | 'data_quality_auditor'
   | 'hypothesis_generator'
   | 'ml_engineer'
+  | 'threshold_tuner'
   | 'judge'
   | 'router'
   | 'memory_writer'
@@ -49,6 +51,14 @@ export const SIMPLE_LOOP_NODES: SimpleLoopNode[] = [
     service: 'node script',
   },
   {
+    // NEW agent (IDS706 Week 11): measured leakage / imbalance checks
+    id: 'data_quality_auditor',
+    title: 'Data Quality Auditor',
+    role: 'Leakage AUC scan · imbalance · ids',
+    kind: 'code',
+    service: 'node script',
+  },
+  {
     id: 'hypothesis_generator',
     title: 'Hypothesis Generator',
     role: 'Conceptual next step (no HPT)',
@@ -60,6 +70,14 @@ export const SIMPLE_LOOP_NODES: SimpleLoopNode[] = [
     title: 'ML Engineer',
     role: 'HPT config · train · repair',
     kind: 'code_llm',
+    service: 'node script',
+  },
+  {
+    // NEW agent (IDS706 Week 11): only runs when the auditor flags imbalance
+    id: 'threshold_tuner',
+    title: 'Threshold Tuner',
+    role: 'F1-optimal cut-off (imbalanced only)',
+    kind: 'code',
     service: 'node script',
   },
   {
@@ -129,10 +147,19 @@ export const SIMPLE_LOOP_EDGES: SimpleLoopEdge[] = [
   },
   // Main spine — horizontal
   {
-    id: 'e-ds-hyp',
+    id: 'e-ds-audit',
     source: 'data_scientist',
+    target: 'data_quality_auditor',
+    kind: 'control',
+    sourceHandle: 'right-out',
+    targetHandle: 'left-in',
+  },
+  {
+    id: 'e-audit-hyp',
+    source: 'data_quality_auditor',
     target: 'hypothesis_generator',
     kind: 'control',
+    label: 'drops',
     sourceHandle: 'right-out',
     targetHandle: 'left-in',
   },
@@ -144,13 +171,32 @@ export const SIMPLE_LOOP_EDGES: SimpleLoopEdge[] = [
     sourceHandle: 'right-out',
     targetHandle: 'left-in',
   },
+  // Conditional: imbalanced -> threshold tuner (detour above), balanced -> judge
   {
     id: 'e-ml-judge',
     source: 'ml_engineer',
     target: 'judge',
     kind: 'control',
+    label: 'balanced',
     sourceHandle: 'right-out',
     targetHandle: 'left-in',
+  },
+  {
+    id: 'e-ml-tuner',
+    source: 'ml_engineer',
+    target: 'threshold_tuner',
+    kind: 'control',
+    label: 'imbalanced',
+    sourceHandle: 'top-out',
+    targetHandle: 'left-in',
+  },
+  {
+    id: 'e-tuner-judge',
+    source: 'threshold_tuner',
+    target: 'judge',
+    kind: 'control',
+    sourceHandle: 'right-out',
+    targetHandle: 'top-in',
   },
   {
     id: 'e-judge-router',
@@ -218,37 +264,47 @@ export const SIMPLE_LOOP_EDGES: SimpleLoopEdge[] = [
 /**
  * Classroom snap layout (x step 260, y: 40 / 260 / 480).
  * Columns align so control edges stay axis-aligned (straight step paths):
- *   top:    dataset · ds · hyp · ml · judge · router
+ *   upper:                              tuner (imbalanced detour)
+ *   top:    dataset · ds · auditor · hyp · ml · judge · router
  *   mid:               ctx · mem · writer
  *   bottom:                         best · holdout
  */
 export const SIMPLE_LOOP_POSITIONS: Record<SimpleLoopNodeId, { x: number; y: number }> = {
+  // Upper detour row: threshold tuner sits between ML engineer and judge
+  threshold_tuner: { x: 1300, y: -180 },
+  // Main row
   dataset: { x: 0, y: 40 },
   data_scientist: { x: 260, y: 40 },
-  hypothesis_generator: { x: 520, y: 40 },
-  ml_engineer: { x: 780, y: 40 },
-  judge: { x: 1040, y: 40 },
-  router: { x: 1300, y: 40 },
-  // Mid row under hyp / ml / judge (not under router) → revise is a clean L
-  context_builder: { x: 520, y: 260 },
-  research_memory: { x: 780, y: 260 },
-  memory_writer: { x: 1040, y: 260 },
-  best_candidate: { x: 1300, y: 480 },
-  holdout_eval: { x: 1560, y: 480 },
+  data_quality_auditor: { x: 520, y: 40 },
+  hypothesis_generator: { x: 780, y: 40 },
+  ml_engineer: { x: 1040, y: 40 },
+  judge: { x: 1560, y: 40 },
+  router: { x: 1820, y: 40 },
+  // Revise loop row (context builder directly under hypothesis)
+  context_builder: { x: 780, y: 260 },
+  research_memory: { x: 1300, y: 260 },
+  memory_writer: { x: 1560, y: 260 },
+  // Finalize row
+  best_candidate: { x: 1820, y: 480 },
+  holdout_eval: { x: 2080, y: 480 },
 }
 
 export const SIMPLE_LOOP_FLOW = [
   'data_scientist',
+  'data_quality_auditor',
   'hypothesis_generator',
   'ml_engineer',
+  'threshold_tuner',
   'judge',
   'router',
 ] as const
 
 export const GRAPH_NODE_TO_VISUAL: Record<string, SimpleLoopNodeId> = {
   data_scientist: 'data_scientist',
+  data_quality_auditor: 'data_quality_auditor',
   hypothesis_generator: 'hypothesis_generator',
   ml_engineer: 'ml_engineer',
+  threshold_tuner: 'threshold_tuner',
   judge: 'judge',
   router: 'router',
   memory_writer: 'memory_writer',
