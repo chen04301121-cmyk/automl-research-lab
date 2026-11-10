@@ -1,0 +1,3780 @@
+{
+  "generated_at": "2026-11-09 23:18:10",
+  "cases": [
+    {
+      "id": "C1_leak_known",
+      "title": "Leaky column (known name)",
+      "input": {
+        "dataset": "fraud_leaky.csv",
+        "target": "is_fraud",
+        "budget": 6
+      },
+      "expected_behavior": "Detect fraud_probability as leakage, never train on it, report an honest (low) holdout PR-AUC.",
+      "criteria": [
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 1
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "fraud_probability"
+          },
+          "group": "intermediate",
+          "weight": 2
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2
+        }
+      ],
+      "pass_threshold": 1.0
+    },
+    {
+      "id": "C2_leak_renamed",
+      "title": "Leaky column (renamed upstream)",
+      "input": {
+        "dataset": "fraud_leak_renamed.csv",
+        "target": "is_fraud",
+        "budget": 6
+      },
+      "expected_behavior": "Same leak under a new name (vendor_risk_score): detection must come from evidence, not a hard-coded list.",
+      "criteria": [
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 1
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "vendor_risk_score"
+          },
+          "group": "intermediate",
+          "weight": 2
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2
+        }
+      ],
+      "pass_threshold": 1.0
+    },
+    {
+      "id": "C3_balanced_titanic",
+      "title": "Balanced, clean data (Titanic)",
+      "input": {
+        "dataset": "titanic.csv",
+        "target": "Survived",
+        "budget": 6
+      },
+      "expected_behavior": "No imbalance -> skip the threshold tuner; reach a solid holdout F1.",
+      "criteria": [
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 1
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": false
+          },
+          "group": "coordination",
+          "weight": 1
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.7
+          },
+          "group": "final",
+          "weight": 2
+        }
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C4_signal_imbalanced",
+      "title": "Imbalanced data with real signal",
+      "input": {
+        "dataset": "signal_clean.csv",
+        "target": "label",
+        "budget": 6
+      },
+      "expected_behavior": "Detect imbalance, use the tuner, find a model family that beats logistic regression.",
+      "criteria": [
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 1
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": true
+          },
+          "group": "coordination",
+          "weight": 1
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "account_id"
+          },
+          "group": "intermediate",
+          "weight": 1
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 2
+        }
+      ],
+      "pass_threshold": 0.8
+    },
+    {
+      "id": "C5_dirty_numeric",
+      "title": "Junk strings in a numeric column",
+      "input": {
+        "dataset": "signal_dirty_numeric.csv",
+        "target": "label",
+        "budget": 6
+      },
+      "expected_behavior": "Validator flags numeric contamination in f3, repair coerces it, run completes with good F1.",
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "numeric_contamination"
+          },
+          "group": "intermediate",
+          "weight": 1
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "coerce_numeric"
+          },
+          "group": "intermediate",
+          "weight": 1
+        },
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 1
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1
+        }
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C6_duplicates",
+      "title": "8% duplicated rows",
+      "input": {
+        "dataset": "signal_duplicates.csv",
+        "target": "label",
+        "budget": 6
+      },
+      "expected_behavior": "Detect and drop duplicate rows before splitting (otherwise copies leak into the holdout).",
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "duplicate_rows"
+          },
+          "group": "intermediate",
+          "weight": 1
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "drop_duplicates"
+          },
+          "group": "intermediate",
+          "weight": 1
+        },
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 1
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1
+        }
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C7_invalid_labels",
+      "title": "1.5% invalid target labels",
+      "input": {
+        "dataset": "signal_invalid_labels.csv",
+        "target": "label",
+        "budget": 6
+      },
+      "expected_behavior": "Quarantine rows whose label is not 0/1 instead of crashing.",
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "quarantine_invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1
+        },
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 2
+        }
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C8_flaky_worker",
+      "title": "Training worker fails 3 times",
+      "input": {
+        "dataset": "signal_clean.csv",
+        "target": "label",
+        "budget": 6,
+        "trainer_fail_times": 3
+      },
+      "expected_behavior": "Retry failed fits, route around the failure and still finish with a good model.",
+      "criteria": [
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 2
+        },
+        {
+          "check": "retried",
+          "args": {
+            "min": 1
+          },
+          "group": "coordination",
+          "weight": 1
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1
+        }
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C9_no_signal_budget",
+      "title": "No signal: do not waste the budget",
+      "input": {
+        "dataset": "fraud_no_signal.csv",
+        "target": "is_fraud",
+        "budget": 8
+      },
+      "expected_behavior": "Nothing beats ~3% PR-AUC; detect the plateau and stop early instead of spending all 8 experiments.",
+      "criteria": [
+        {
+          "check": "completed",
+          "group": "final",
+          "weight": 1
+        },
+        {
+          "check": "early_stop",
+          "group": "coordination",
+          "weight": 2
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 1
+        }
+      ],
+      "pass_threshold": 1.0
+    }
+  ],
+  "results": [
+    {
+      "case": "C1_leak_known",
+      "title": "Leaky column (known name)",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.05504587155963303,
+          "accuracy": 0.9485,
+          "roc_auc": 0.5064719857286585,
+          "pr_auc": 0.03665309344049122,
+          "threshold": 0.6,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {
+          "target_rate": 0.0306,
+          "imbalanced": true,
+          "leaky_columns_auc": {
+            "fraud_probability": 1.0
+          },
+          "id_like_columns": [
+            "transaction_id",
+            "customer_id",
+            "merchant_id",
+            "timestamp"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "fraud_probability",
+            "transaction_id",
+            "customer_id",
+            "merchant_id",
+            "timestamp"
+          ]
+        },
+        "dropped_columns": [
+          "fraud_probability",
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp"
+        ],
+        "tuner_used": true,
+        "retries": 0,
+        "experiments": 3,
+        "failed_experiments": 0,
+        "stop_reason": "plateau (early stop)",
+        "agent_calls": 15,
+        "route": [
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "10000 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=['fraud_probability'] \u00b7 imbalanced=True \u00b7 drops=5",
+            "audit": {
+              "target_rate": 0.0306,
+              "imbalanced": true,
+              "leaky_columns_auc": {
+                "fraud_probability": 1.0
+              },
+              "id_like_columns": [
+                "transaction_id",
+                "customer_id",
+                "merchant_id",
+                "timestamp"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "fraud_probability",
+                "transaction_id",
+                "customer_id",
+                "merchant_id",
+                "timestamp"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.051"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.6 \u00b7 F1 0.051 -> 0.060"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.060 \u00b7 best 0.060"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.000"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.05 \u00b7 F1 0.000 -> 0.032"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.032 \u00b7 best 0.060"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.000"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.15 \u00b7 F1 0.000 -> 0.061"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.061 \u00b7 best 0.060 \u00b7 STOP: plateau (early stop)"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.055 \u00b7 PR-AUC 0.037"
+          }
+        ],
+        "runtime_s": 58.06
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "fraud_probability"
+          },
+          "group": "intermediate",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "dropped"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "PR-AUC 0.037"
+        }
+      ]
+    },
+    {
+      "case": "C1_leak_known",
+      "title": "Leaky column (known name)",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.05015045135406219,
+          "accuracy": 0.5265,
+          "roc_auc": 0.5088646336205074,
+          "pr_auc": 0.036596609338275236,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp",
+          "fraud_probability"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 6,
+        "failed_experiments": 0,
+        "stop_reason": "finalize",
+        "agent_calls": 30,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 103.51
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "fraud_probability"
+          },
+          "group": "intermediate",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "dropped"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "PR-AUC 0.037"
+        }
+      ]
+    },
+    {
+      "case": "C1_leak_known",
+      "title": "Leaky column (known name)",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.07050528789659224,
+          "accuracy": 0.6045,
+          "roc_auc": 0.5938078610742397,
+          "pr_auc": 0.04028010157159833,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "fraud_probability",
+          "timestamp"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 1,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 5,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 1.2
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "fraud_probability"
+          },
+          "group": "intermediate",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "dropped"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "PR-AUC 0.040"
+        }
+      ]
+    },
+    {
+      "case": "C2_leak_renamed",
+      "title": "Leaky column (renamed upstream)",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.05504587155963303,
+          "accuracy": 0.9485,
+          "roc_auc": 0.5064719857286585,
+          "pr_auc": 0.03665309344049122,
+          "threshold": 0.6,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {
+          "target_rate": 0.0306,
+          "imbalanced": true,
+          "leaky_columns_auc": {
+            "vendor_risk_score": 1.0
+          },
+          "id_like_columns": [
+            "transaction_id",
+            "customer_id",
+            "merchant_id",
+            "timestamp"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "vendor_risk_score",
+            "transaction_id",
+            "customer_id",
+            "merchant_id",
+            "timestamp"
+          ]
+        },
+        "dropped_columns": [
+          "vendor_risk_score",
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp"
+        ],
+        "tuner_used": true,
+        "retries": 0,
+        "experiments": 3,
+        "failed_experiments": 0,
+        "stop_reason": "plateau (early stop)",
+        "agent_calls": 15,
+        "route": [
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "10000 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=['vendor_risk_score'] \u00b7 imbalanced=True \u00b7 drops=5",
+            "audit": {
+              "target_rate": 0.0306,
+              "imbalanced": true,
+              "leaky_columns_auc": {
+                "vendor_risk_score": 1.0
+              },
+              "id_like_columns": [
+                "transaction_id",
+                "customer_id",
+                "merchant_id",
+                "timestamp"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "vendor_risk_score",
+                "transaction_id",
+                "customer_id",
+                "merchant_id",
+                "timestamp"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.051"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.6 \u00b7 F1 0.051 -> 0.060"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.060 \u00b7 best 0.060"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.000"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.05 \u00b7 F1 0.000 -> 0.032"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.032 \u00b7 best 0.060"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.000"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.15 \u00b7 F1 0.000 -> 0.061"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.061 \u00b7 best 0.060 \u00b7 STOP: plateau (early stop)"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.055 \u00b7 PR-AUC 0.037"
+          }
+        ],
+        "runtime_s": 177.79
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "vendor_risk_score"
+          },
+          "group": "intermediate",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "dropped"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "PR-AUC 0.037"
+        }
+      ]
+    },
+    {
+      "case": "C2_leak_renamed",
+      "title": "Leaky column (renamed upstream)",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.05268292682926829,
+          "accuracy": 0.5145,
+          "roc_auc": 0.5061591660396182,
+          "pr_auc": 0.035654301882571404,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 6,
+        "failed_experiments": 0,
+        "stop_reason": "finalize",
+        "agent_calls": 30,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 93.12
+      },
+      "score": 0.6,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "vendor_risk_score"
+          },
+          "group": "intermediate",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "kept"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "PR-AUC 0.036"
+        }
+      ]
+    },
+    {
+      "case": "C2_leak_renamed",
+      "title": "Leaky column (renamed upstream)",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 1.0,
+          "accuracy": 1.0,
+          "roc_auc": 1.0,
+          "pr_auc": 1.0,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 1,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 5,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.62
+      },
+      "score": 0.2,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "vendor_risk_score"
+          },
+          "group": "intermediate",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "kept"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "PR-AUC 1.000"
+        }
+      ]
+    },
+    {
+      "case": "C3_balanced_titanic",
+      "title": "Balanced, clean data (Titanic)",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.7285714285714285,
+          "accuracy": 0.7877094972067039,
+          "roc_auc": 0.8457180500658762,
+          "pr_auc": 0.8047875551752057,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 179
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {
+          "target_rate": 0.3838,
+          "imbalanced": false,
+          "leaky_columns_auc": {},
+          "id_like_columns": [
+            "Name"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "Name"
+          ]
+        },
+        "dropped_columns": [
+          "Name"
+        ],
+        "tuner_used": false,
+        "retries": 2,
+        "experiments": 3,
+        "failed_experiments": 0,
+        "stop_reason": "plateau (early stop)",
+        "agent_calls": 16,
+        "route": [
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "evaluator",
+          "planner",
+          "trainer",
+          "trainer_repair",
+          "trainer",
+          "evaluator",
+          "planner",
+          "trainer",
+          "trainer_repair",
+          "trainer",
+          "evaluator",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "891 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=none \u00b7 imbalanced=False \u00b7 drops=1",
+            "audit": {
+              "target_rate": 0.3838,
+              "imbalanced": false,
+              "leaky_columns_auc": {},
+              "id_like_columns": [
+                "Name"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "Name"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.757"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.757 \u00b7 best 0.757"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "FAILED: TypeError: Sparse data was passed for X, but dense data is required. Use '.toarr"
+          },
+          {
+            "agent": "trainer_repair",
+            "note": "retry with logistic regression (safe fallback)"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.757"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.757 \u00b7 best 0.757"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "FAILED: TypeError: Sparse data was passed for X, but dense data is required. Use '.toarr"
+          },
+          {
+            "agent": "trainer_repair",
+            "note": "retry with logistic regression (safe fallback)"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.757"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.757 \u00b7 best 0.757 \u00b7 STOP: plateau (early stop)"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.729 \u00b7 PR-AUC 0.805"
+          }
+        ],
+        "runtime_s": 5.58
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": false
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "tuner_used=False"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.7
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "F1 0.729"
+        }
+      ]
+    },
+    {
+      "case": "C3_balanced_titanic",
+      "title": "Balanced, clean data (Titanic)",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.7605633802816901,
+          "accuracy": 0.8100558659217877,
+          "roc_auc": 0.846376811594203,
+          "pr_auc": 0.7882770230745821,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 179
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "PassengerId",
+          "Name",
+          "Ticket",
+          "Cabin"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 6,
+        "failed_experiments": 0,
+        "stop_reason": "finalize",
+        "agent_calls": 30,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 3.03
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": false
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "tuner_used=False"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.7
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "F1 0.761"
+        }
+      ]
+    },
+    {
+      "case": "C3_balanced_titanic",
+      "title": "Balanced, clean data (Titanic)",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.7,
+          "accuracy": 0.7653631284916201,
+          "roc_auc": 0.7930171277997365,
+          "pr_auc": 0.7243595103334116,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 179
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "PassengerId",
+          "Name",
+          "Ticket"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 1,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 5,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.05
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": false
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "tuner_used=False"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.7
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "F1 0.700"
+        }
+      ]
+    },
+    {
+      "case": "C4_signal_imbalanced",
+      "title": "Imbalanced data with real signal",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.6744186046511628,
+          "accuracy": 0.93,
+          "roc_auc": 0.9023226861804153,
+          "pr_auc": 0.7285638800171217,
+          "threshold": 0.1,
+          "model_family": "hist_gradient_boosting",
+          "n_holdout": 1200
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {
+          "target_rate": 0.1072,
+          "imbalanced": true,
+          "leaky_columns_auc": {},
+          "id_like_columns": [
+            "account_id"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "account_id"
+          ]
+        },
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": true,
+        "retries": 0,
+        "experiments": 5,
+        "failed_experiments": 0,
+        "stop_reason": "search space exhausted",
+        "agent_calls": 24,
+        "route": [
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "6000 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=none \u00b7 imbalanced=True \u00b7 drops=1",
+            "audit": {
+              "target_rate": 0.1072,
+              "imbalanced": true,
+              "leaky_columns_auc": {},
+              "id_like_columns": [
+                "account_id"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "account_id"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.248"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.55 \u00b7 F1 0.248 -> 0.274"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.274 \u00b7 best 0.274"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.615"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.615 -> 0.705"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.705 \u00b7 best 0.705"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.622"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.5 \u00b7 F1 0.622 -> 0.622"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.622 \u00b7 best 0.705"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.05, 'max_iter': 400}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.598"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.598 -> 0.725"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 4: succeeded score 0.725 \u00b7 best 0.725"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.2, 'max_iter': 150}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.598"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.05 \u00b7 F1 0.598 -> 0.694"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 5: succeeded score 0.694 \u00b7 best 0.725"
+          },
+          {
+            "agent": "planner",
+            "note": "nothing left to try"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.674 \u00b7 PR-AUC 0.729"
+          }
+        ],
+        "runtime_s": 95.41
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": true
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "tuner_used=True"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "account_id"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "dropped"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "F1 0.674"
+        }
+      ]
+    },
+    {
+      "case": "C4_signal_imbalanced",
+      "title": "Imbalanced data with real signal",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.24120603015075376,
+          "accuracy": 0.6225,
+          "roc_auc": 0.6341823551125878,
+          "pr_auc": 0.20689355316995725,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 1200
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 6,
+        "failed_experiments": 0,
+        "stop_reason": "finalize",
+        "agent_calls": 30,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.67
+      },
+      "score": 0.4,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": true
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "tuner_used=False"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "account_id"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "dropped"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "F1 0.241"
+        }
+      ]
+    },
+    {
+      "case": "C4_signal_imbalanced",
+      "title": "Imbalanced data with real signal",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.23920265780730898,
+          "accuracy": 0.6183333333333333,
+          "roc_auc": 0.633639502312553,
+          "pr_auc": 0.20463316357345196,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 1200
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 1,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 5,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.08
+      },
+      "score": 0.2,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "tuner_used",
+          "args": {
+            "expected": true
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "tuner_used=False"
+        },
+        {
+          "check": "column_dropped",
+          "args": {
+            "column": "account_id"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "kept"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "F1 0.239"
+        }
+      ]
+    },
+    {
+      "case": "C5_dirty_numeric",
+      "title": "Junk strings in a numeric column",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.6324110671936759,
+          "accuracy": 0.9225,
+          "roc_auc": 0.9015988824470358,
+          "pr_auc": 0.7278938394194643,
+          "threshold": 0.1,
+          "model_family": "hist_gradient_boosting",
+          "n_holdout": 1200
+        },
+        "validation_issues": [
+          "numeric_contamination"
+        ],
+        "repairs": [
+          {
+            "action": "coerce_numeric",
+            "column": "f3",
+            "rows": 180
+          }
+        ],
+        "audit": {
+          "target_rate": 0.1072,
+          "imbalanced": true,
+          "leaky_columns_auc": {},
+          "id_like_columns": [
+            "account_id"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "account_id"
+          ]
+        },
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": true,
+        "retries": 0,
+        "experiments": 5,
+        "failed_experiments": 0,
+        "stop_reason": "search space exhausted",
+        "agent_calls": 26,
+        "route": [
+          "validator",
+          "data_repair",
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "6000 rows \u00b7 1 fixable \u00b7 0 fatal",
+            "issues": [
+              {
+                "type": "numeric_contamination",
+                "column": "f3",
+                "rows": 180
+              }
+            ]
+          },
+          {
+            "agent": "data_repair",
+            "note": "1 actions",
+            "actions": [
+              {
+                "action": "coerce_numeric",
+                "column": "f3",
+                "rows": 180
+              }
+            ]
+          },
+          {
+            "agent": "validator",
+            "note": "6000 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=none \u00b7 imbalanced=True \u00b7 drops=1",
+            "audit": {
+              "target_rate": 0.1072,
+              "imbalanced": true,
+              "leaky_columns_auc": {},
+              "id_like_columns": [
+                "account_id"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "account_id"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.251"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.55 \u00b7 F1 0.251 -> 0.277"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.277 \u00b7 best 0.277"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.571"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.571 -> 0.711"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.711 \u00b7 best 0.711"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.589"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.45 \u00b7 F1 0.589 -> 0.627"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.627 \u00b7 best 0.711"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.05, 'max_iter': 400}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.605"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.605 -> 0.723"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 4: succeeded score 0.723 \u00b7 best 0.723"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.2, 'max_iter': 150}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.591"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.05 \u00b7 F1 0.591 -> 0.698"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 5: succeeded score 0.698 \u00b7 best 0.723"
+          },
+          {
+            "agent": "planner",
+            "note": "nothing left to try"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.632 \u00b7 PR-AUC 0.728"
+          }
+        ],
+        "runtime_s": 37.79
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "numeric_contamination"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "coerce_numeric"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "F1 0.632"
+        }
+      ]
+    },
+    {
+      "case": "C5_dirty_numeric",
+      "title": "Junk strings in a numeric column",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.26433915211970077,
+          "accuracy": 0.7541666666666667,
+          "roc_auc": 0.6300711499069912,
+          "pr_auc": 0.21767847831480036,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 1200
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 6,
+        "failed_experiments": 0,
+        "stop_reason": "finalize",
+        "agent_calls": 30,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 4.29
+      },
+      "score": 0.25,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "numeric_contamination"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "coerce_numeric"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "F1 0.264"
+        }
+      ]
+    },
+    {
+      "case": "C5_dirty_numeric",
+      "title": "Junk strings in a numeric column",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.21663442940038685,
+          "accuracy": 0.6625,
+          "roc_auc": 0.5791081290397295,
+          "pr_auc": 0.14860096789569918,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 1200
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 1,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 5,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 59.61
+      },
+      "score": 0.25,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "numeric_contamination"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "coerce_numeric"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "F1 0.217"
+        }
+      ]
+    },
+    {
+      "case": "C6_duplicates",
+      "title": "8% duplicated rows",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.6744186046511628,
+          "accuracy": 0.93,
+          "roc_auc": 0.9023226861804153,
+          "pr_auc": 0.7285638800171217,
+          "threshold": 0.1,
+          "model_family": "hist_gradient_boosting",
+          "n_holdout": 1200
+        },
+        "validation_issues": [
+          "duplicate_rows"
+        ],
+        "repairs": [
+          {
+            "action": "drop_duplicates",
+            "rows": 480
+          }
+        ],
+        "audit": {
+          "target_rate": 0.1072,
+          "imbalanced": true,
+          "leaky_columns_auc": {},
+          "id_like_columns": [
+            "account_id"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "account_id"
+          ]
+        },
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": true,
+        "retries": 0,
+        "experiments": 5,
+        "failed_experiments": 0,
+        "stop_reason": "search space exhausted",
+        "agent_calls": 26,
+        "route": [
+          "validator",
+          "data_repair",
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "6480 rows \u00b7 1 fixable \u00b7 0 fatal",
+            "issues": [
+              {
+                "type": "duplicate_rows",
+                "rows": 480
+              }
+            ]
+          },
+          {
+            "agent": "data_repair",
+            "note": "1 actions",
+            "actions": [
+              {
+                "action": "drop_duplicates",
+                "rows": 480
+              }
+            ]
+          },
+          {
+            "agent": "validator",
+            "note": "6000 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=none \u00b7 imbalanced=True \u00b7 drops=1",
+            "audit": {
+              "target_rate": 0.1072,
+              "imbalanced": true,
+              "leaky_columns_auc": {},
+              "id_like_columns": [
+                "account_id"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "account_id"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.248"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.55 \u00b7 F1 0.248 -> 0.274"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.274 \u00b7 best 0.274"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.615"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.615 -> 0.705"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.705 \u00b7 best 0.705"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.622"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.5 \u00b7 F1 0.622 -> 0.622"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.622 \u00b7 best 0.705"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.05, 'max_iter': 400}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.598"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.598 -> 0.725"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 4: succeeded score 0.725 \u00b7 best 0.725"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.2, 'max_iter': 150}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.598"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.05 \u00b7 F1 0.598 -> 0.694"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 5: succeeded score 0.694 \u00b7 best 0.725"
+          },
+          {
+            "agent": "planner",
+            "note": "nothing left to try"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.674 \u00b7 PR-AUC 0.729"
+          }
+        ],
+        "runtime_s": 76.35
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "duplicate_rows"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "drop_duplicates"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "F1 0.674"
+        }
+      ]
+    },
+    {
+      "case": "C6_duplicates",
+      "title": "8% duplicated rows",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.27426810477657937,
+          "accuracy": 0.6365740740740741,
+          "roc_auc": 0.6834872719080873,
+          "pr_auc": 0.2442665881022595,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 1296
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 6,
+        "failed_experiments": 0,
+        "stop_reason": "finalize",
+        "agent_calls": 30,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.82
+      },
+      "score": 0.25,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "duplicate_rows"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "drop_duplicates"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "F1 0.274"
+        }
+      ]
+    },
+    {
+      "case": "C6_duplicates",
+      "title": "8% duplicated rows",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.2751159196290572,
+          "accuracy": 0.6381172839506173,
+          "roc_auc": 0.682517333733824,
+          "pr_auc": 0.24251118837042257,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 1296
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 1,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 5,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.05
+      },
+      "score": 0.25,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "duplicate_rows"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "drop_duplicates"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "F1 0.275"
+        }
+      ]
+    },
+    {
+      "case": "C7_invalid_labels",
+      "title": "1.5% invalid target labels",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.7205882352941176,
+          "accuracy": 0.9357021996615905,
+          "roc_auc": 0.949986938836437,
+          "pr_auc": 0.811955872060315,
+          "threshold": 0.1,
+          "model_family": "hist_gradient_boosting",
+          "n_holdout": 1182
+        },
+        "validation_issues": [
+          "invalid_labels"
+        ],
+        "repairs": [
+          {
+            "action": "quarantine_invalid_labels",
+            "rows": 90
+          }
+        ],
+        "audit": {
+          "target_rate": 0.1074,
+          "imbalanced": true,
+          "leaky_columns_auc": {},
+          "id_like_columns": [
+            "account_id"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "account_id"
+          ]
+        },
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": true,
+        "retries": 0,
+        "experiments": 4,
+        "failed_experiments": 0,
+        "stop_reason": "plateau (early stop)",
+        "agent_calls": 21,
+        "route": [
+          "validator",
+          "data_repair",
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "6000 rows \u00b7 1 fixable \u00b7 0 fatal",
+            "issues": [
+              {
+                "type": "invalid_labels",
+                "rows": 90
+              }
+            ]
+          },
+          {
+            "agent": "data_repair",
+            "note": "1 actions",
+            "actions": [
+              {
+                "action": "quarantine_invalid_labels",
+                "rows": 90
+              }
+            ]
+          },
+          {
+            "agent": "validator",
+            "note": "5910 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=none \u00b7 imbalanced=True \u00b7 drops=1",
+            "audit": {
+              "target_rate": 0.1074,
+              "imbalanced": true,
+              "leaky_columns_auc": {},
+              "id_like_columns": [
+                "account_id"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "account_id"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.271"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.6 \u00b7 F1 0.271 -> 0.292"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.292 \u00b7 best 0.292"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.649"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.649 -> 0.752"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.752 \u00b7 best 0.752"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.721"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.5 \u00b7 F1 0.721 -> 0.721"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.721 \u00b7 best 0.752"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.05, 'max_iter': 400}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.606"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.606 -> 0.742"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 4: succeeded score 0.742 \u00b7 best 0.752 \u00b7 STOP: plateau (early stop)"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.721 \u00b7 PR-AUC 0.812"
+          }
+        ],
+        "runtime_s": 15.62
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "quarantine_invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "completed"
+        }
+      ]
+    },
+    {
+      "case": "C7_invalid_labels",
+      "title": "1.5% invalid target labels",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "failed",
+        "error": "ValueError: Input contains NaN",
+        "holdout": {},
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 0,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 0,
+        "route": [],
+        "runtime_s": 0.1
+      },
+      "score": 0.0,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "quarantine_invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "failed: ValueError: Input contains NaN"
+        }
+      ]
+    },
+    {
+      "case": "C7_invalid_labels",
+      "title": "1.5% invalid target labels",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "failed",
+        "error": "ValueError: Input contains NaN",
+        "holdout": {},
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [],
+        "tuner_used": false,
+        "retries": 2,
+        "experiments": 0,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 15,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.02
+      },
+      "score": 0.0,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "issue_detected",
+          "args": {
+            "type": "invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not detected"
+        },
+        {
+          "check": "repair_applied",
+          "args": {
+            "action": "quarantine_invalid_labels"
+          },
+          "group": "intermediate",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "not applied"
+        },
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "failed: ValueError: Input contains NaN"
+        }
+      ]
+    },
+    {
+      "case": "C8_flaky_worker",
+      "title": "Training worker fails 3 times",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.6744186046511628,
+          "accuracy": 0.93,
+          "roc_auc": 0.9023226861804153,
+          "pr_auc": 0.7285638800171217,
+          "threshold": 0.1,
+          "model_family": "hist_gradient_boosting",
+          "n_holdout": 1200
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {
+          "target_rate": 0.1072,
+          "imbalanced": true,
+          "leaky_columns_auc": {},
+          "id_like_columns": [
+            "account_id"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "account_id"
+          ]
+        },
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": true,
+        "retries": 2,
+        "experiments": 5,
+        "failed_experiments": 1,
+        "stop_reason": "search space exhausted",
+        "agent_calls": 27,
+        "route": [
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "trainer_repair",
+          "trainer",
+          "trainer_repair",
+          "trainer",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "6000 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=none \u00b7 imbalanced=True \u00b7 drops=1",
+            "audit": {
+              "target_rate": 0.1072,
+              "imbalanced": true,
+              "leaky_columns_auc": {},
+              "id_like_columns": [
+                "account_id"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "account_id"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "FAILED: RuntimeError: transient worker failure (injected)"
+          },
+          {
+            "agent": "trainer_repair",
+            "note": "retry same spec (transient error)"
+          },
+          {
+            "agent": "trainer",
+            "note": "FAILED: RuntimeError: transient worker failure (injected)"
+          },
+          {
+            "agent": "trainer_repair",
+            "note": "retry same spec (transient error)"
+          },
+          {
+            "agent": "trainer",
+            "note": "FAILED: RuntimeError: transient worker failure (injected)"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: failed score 0.000 \u00b7 best 0.000"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.615"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.615 -> 0.705"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.705 \u00b7 best 0.705"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.622"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.5 \u00b7 F1 0.622 -> 0.622"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.622 \u00b7 best 0.705"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.05, 'max_iter': 400}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.598"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.1 \u00b7 F1 0.598 -> 0.725"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 4: succeeded score 0.725 \u00b7 best 0.725"
+          },
+          {
+            "agent": "planner",
+            "note": "refine best family: hist_gradient_boosting {'learning_rate': 0.2, 'max_iter': 150}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.598"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.05 \u00b7 F1 0.598 -> 0.694"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 5: succeeded score 0.694 \u00b7 best 0.725"
+          },
+          {
+            "agent": "planner",
+            "note": "nothing left to try"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.674 \u00b7 PR-AUC 0.729"
+          }
+        ],
+        "runtime_s": 21.8
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "retried",
+          "args": {
+            "min": 1
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "retries=2"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "F1 0.674"
+        }
+      ]
+    },
+    {
+      "case": "C8_flaky_worker",
+      "title": "Training worker fails 3 times",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.42630385487528344,
+          "accuracy": 0.7891666666666667,
+          "roc_auc": 0.8352188420587874,
+          "pr_auc": 0.523057683025522,
+          "threshold": 0.5,
+          "model_family": "random_forest",
+          "n_holdout": 1200
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "account_id"
+        ],
+        "tuner_used": false,
+        "retries": 2,
+        "experiments": 6,
+        "failed_experiments": 1,
+        "stop_reason": "finalize",
+        "agent_calls": 30,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 1.84
+      },
+      "score": 0.75,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "retried",
+          "args": {
+            "min": 1
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "retries=2"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "F1 0.426"
+        }
+      ]
+    },
+    {
+      "case": "C8_flaky_worker",
+      "title": "Training worker fails 3 times",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "failed",
+        "error": "RuntimeError: transient worker failure (injected)",
+        "holdout": {},
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [],
+        "tuner_used": false,
+        "retries": 2,
+        "experiments": 0,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 15,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.05
+      },
+      "score": 0.25,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "failed: RuntimeError: transient worker failure (injected)"
+        },
+        {
+          "check": "retried",
+          "args": {
+            "min": 1
+          },
+          "group": "coordination",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "retries=2"
+        },
+        {
+          "check": "min_holdout_f1",
+          "args": {
+            "value": 0.55
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": false,
+          "observed": "F1 -"
+        }
+      ]
+    },
+    {
+      "case": "C9_no_signal_budget",
+      "title": "No signal: do not waste the budget",
+      "system": "adaptive",
+      "result": {
+        "system": "adaptive",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.05504587155963303,
+          "accuracy": 0.9485,
+          "roc_auc": 0.5064719857286585,
+          "pr_auc": 0.03665309344049122,
+          "threshold": 0.6,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {
+          "target_rate": 0.0306,
+          "imbalanced": true,
+          "leaky_columns_auc": {},
+          "id_like_columns": [
+            "transaction_id",
+            "customer_id",
+            "merchant_id",
+            "timestamp"
+          ],
+          "constant_columns": [],
+          "duplicate_rows": 0,
+          "final_drops": [
+            "transaction_id",
+            "customer_id",
+            "merchant_id",
+            "timestamp"
+          ]
+        },
+        "dropped_columns": [
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp"
+        ],
+        "tuner_used": true,
+        "retries": 0,
+        "experiments": 3,
+        "failed_experiments": 0,
+        "stop_reason": "plateau (early stop)",
+        "agent_calls": 15,
+        "route": [
+          "validator",
+          "auditor",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "planner",
+          "trainer",
+          "threshold_tuner",
+          "evaluator",
+          "finalize"
+        ],
+        "events": [
+          {
+            "agent": "validator",
+            "note": "10000 rows \u00b7 0 fixable \u00b7 0 fatal",
+            "issues": []
+          },
+          {
+            "agent": "auditor",
+            "note": "leaky=none \u00b7 imbalanced=True \u00b7 drops=4",
+            "audit": {
+              "target_rate": 0.0306,
+              "imbalanced": true,
+              "leaky_columns_auc": {},
+              "id_like_columns": [
+                "transaction_id",
+                "customer_id",
+                "merchant_id",
+                "timestamp"
+              ],
+              "constant_columns": [],
+              "duplicate_rows": 0,
+              "final_drops": [
+                "transaction_id",
+                "customer_id",
+                "merchant_id",
+                "timestamp"
+              ]
+            }
+          },
+          {
+            "agent": "planner",
+            "note": "explore: logistic_regression {'C': 1.0, 'max_iter': 500}"
+          },
+          {
+            "agent": "trainer",
+            "note": "logistic_regression val F1@0.5 0.051"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.6 \u00b7 F1 0.051 -> 0.060"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 1: succeeded score 0.060 \u00b7 best 0.060"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: hist_gradient_boosting {'learning_rate': 0.1, 'max_iter': 200}"
+          },
+          {
+            "agent": "trainer",
+            "note": "hist_gradient_boosting val F1@0.5 0.000"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.05 \u00b7 F1 0.000 -> 0.032"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 2: succeeded score 0.032 \u00b7 best 0.060"
+          },
+          {
+            "agent": "planner",
+            "note": "explore: random_forest {'n_estimators': 300, 'max_depth': 12}"
+          },
+          {
+            "agent": "trainer",
+            "note": "random_forest val F1@0.5 0.000"
+          },
+          {
+            "agent": "threshold_tuner",
+            "note": "threshold 0.15 \u00b7 F1 0.000 -> 0.061"
+          },
+          {
+            "agent": "evaluator",
+            "note": "exp 3: succeeded score 0.061 \u00b7 best 0.060 \u00b7 STOP: plateau (early stop)"
+          },
+          {
+            "agent": "finalize",
+            "note": "holdout F1 0.055 \u00b7 PR-AUC 0.037"
+          }
+        ],
+        "runtime_s": 51.65
+      },
+      "score": 1.0,
+      "passed": true,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "early_stop",
+          "args": {},
+          "group": "coordination",
+          "weight": 2.0,
+          "passed": true,
+          "observed": "3/8 exps \u00b7 stop=plateau (early stop)"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "PR-AUC 0.037"
+        }
+      ]
+    },
+    {
+      "case": "C9_no_signal_budget",
+      "title": "No signal: do not waste the budget",
+      "system": "class_agent_loop",
+      "result": {
+        "system": "class_agent_loop",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.05015045135406219,
+          "accuracy": 0.5265,
+          "roc_auc": 0.5088646336205074,
+          "pr_auc": 0.036596609338275236,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 8,
+        "failed_experiments": 0,
+        "stop_reason": "finalize",
+        "agent_calls": 40,
+        "route": [
+          "data_scientist",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "memory_writer",
+          "context_builder",
+          "hypothesis_generator",
+          "ml_engineer",
+          "judge",
+          "holdout_eval"
+        ],
+        "runtime_s": 133.46
+      },
+      "score": 0.5,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "early_stop",
+          "args": {},
+          "group": "coordination",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "8/8 exps \u00b7 stop=finalize"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "PR-AUC 0.037"
+        }
+      ]
+    },
+    {
+      "case": "C9_no_signal_budget",
+      "title": "No signal: do not waste the budget",
+      "system": "fixed_airflow",
+      "result": {
+        "system": "fixed_airflow",
+        "status": "completed",
+        "error": null,
+        "holdout": {
+          "f1": 0.07050528789659224,
+          "accuracy": 0.6045,
+          "roc_auc": 0.5938078610742397,
+          "pr_auc": 0.04028010157159833,
+          "threshold": 0.5,
+          "model_family": "logistic_regression",
+          "n_holdout": 2000
+        },
+        "validation_issues": [],
+        "repairs": [],
+        "audit": {},
+        "dropped_columns": [
+          "transaction_id",
+          "customer_id",
+          "merchant_id",
+          "timestamp"
+        ],
+        "tuner_used": false,
+        "retries": 0,
+        "experiments": 1,
+        "failed_experiments": 0,
+        "stop_reason": null,
+        "agent_calls": 5,
+        "route": [
+          "read",
+          "drop_known_columns",
+          "one_hot",
+          "train_logreg",
+          "holdout_eval"
+        ],
+        "runtime_s": 0.81
+      },
+      "score": 0.5,
+      "passed": false,
+      "criteria": [
+        {
+          "check": "completed",
+          "args": {},
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "completed"
+        },
+        {
+          "check": "early_stop",
+          "args": {},
+          "group": "coordination",
+          "weight": 2.0,
+          "passed": false,
+          "observed": "1/8 exps \u00b7 stop=None"
+        },
+        {
+          "check": "no_leak_in_final",
+          "args": {
+            "max_pr_auc": 0.9
+          },
+          "group": "final",
+          "weight": 1.0,
+          "passed": true,
+          "observed": "PR-AUC 0.040"
+        }
+      ]
+    }
+  ]
+}

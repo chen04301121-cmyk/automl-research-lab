@@ -98,3 +98,13 @@ demo-sse:
 	  -d '{"target_column":"churned","scenario":"$(SCENARIO)"}' | $(PYTHON) -c 'import sys,json; print(json.load(sys.stdin)["session_id"])'); \
 	echo "session=$$SID scenario=$(SCENARIO)"; \
 	curl -sf -N "http://127.0.0.1:8000/sessions/$$SID/events"
+
+# ---------------------------------------------------------------------------
+# IDS706 Week 11 Part 3: evaluation suite (runs in a throwaway Python container,
+# so no local Python setup is needed). Needs datasets/airflow/fraud_clean_latest.csv
+# from the fraud_etl_pipeline DAG.
+# ---------------------------------------------------------------------------
+.PHONY: part3-eval
+part3-eval:
+	docker run --rm -v "$(CURDIR)":/repo -w /repo python:3.12-slim \
+	  sh -c "pip install -q --root-user-action=ignore -r requirements-assignment.txt && python -m part3.eval.run_eval"

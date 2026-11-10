@@ -1,0 +1,116 @@
+{
+  "_doc": "Each case: input (dataset, target, budget, injected fault), expected behavior, scoring criteria (weighted, grouped as intermediate / final / coordination) and a pass threshold on the weighted score.",
+  "cases": [
+    {
+      "id": "C1_leak_known",
+      "title": "Leaky column (known name)",
+      "input": {"dataset": "fraud_leaky.csv", "target": "is_fraud", "budget": 6},
+      "expected_behavior": "Detect fraud_probability as leakage, never train on it, report an honest (low) holdout PR-AUC.",
+      "criteria": [
+        {"check": "completed", "group": "final", "weight": 1},
+        {"check": "column_dropped", "args": {"column": "fraud_probability"}, "group": "intermediate", "weight": 2},
+        {"check": "no_leak_in_final", "args": {"max_pr_auc": 0.9}, "group": "final", "weight": 2}
+      ],
+      "pass_threshold": 1.0
+    },
+    {
+      "id": "C2_leak_renamed",
+      "title": "Leaky column (renamed upstream)",
+      "input": {"dataset": "fraud_leak_renamed.csv", "target": "is_fraud", "budget": 6},
+      "expected_behavior": "Same leak under a new name (vendor_risk_score): detection must come from evidence, not a hard-coded list.",
+      "criteria": [
+        {"check": "completed", "group": "final", "weight": 1},
+        {"check": "column_dropped", "args": {"column": "vendor_risk_score"}, "group": "intermediate", "weight": 2},
+        {"check": "no_leak_in_final", "args": {"max_pr_auc": 0.9}, "group": "final", "weight": 2}
+      ],
+      "pass_threshold": 1.0
+    },
+    {
+      "id": "C3_balanced_titanic",
+      "title": "Balanced, clean data (Titanic)",
+      "input": {"dataset": "titanic.csv", "target": "Survived", "budget": 6},
+      "expected_behavior": "No imbalance -> skip the threshold tuner; reach a solid holdout F1.",
+      "criteria": [
+        {"check": "completed", "group": "final", "weight": 1},
+        {"check": "tuner_used", "args": {"expected": false}, "group": "coordination", "weight": 1},
+        {"check": "min_holdout_f1", "args": {"value": 0.70}, "group": "final", "weight": 2}
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C4_signal_imbalanced",
+      "title": "Imbalanced data with real signal",
+      "input": {"dataset": "signal_clean.csv", "target": "label", "budget": 6},
+      "expected_behavior": "Detect imbalance, use the tuner, find a model family that beats logistic regression.",
+      "criteria": [
+        {"check": "completed", "group": "final", "weight": 1},
+        {"check": "tuner_used", "args": {"expected": true}, "group": "coordination", "weight": 1},
+        {"check": "column_dropped", "args": {"column": "account_id"}, "group": "intermediate", "weight": 1},
+        {"check": "min_holdout_f1", "args": {"value": 0.55}, "group": "final", "weight": 2}
+      ],
+      "pass_threshold": 0.8
+    },
+    {
+      "id": "C5_dirty_numeric",
+      "title": "Junk strings in a numeric column",
+      "input": {"dataset": "signal_dirty_numeric.csv", "target": "label", "budget": 6},
+      "expected_behavior": "Validator flags numeric contamination in f3, repair coerces it, run completes with good F1.",
+      "criteria": [
+        {"check": "issue_detected", "args": {"type": "numeric_contamination"}, "group": "intermediate", "weight": 1},
+        {"check": "repair_applied", "args": {"action": "coerce_numeric"}, "group": "intermediate", "weight": 1},
+        {"check": "completed", "group": "final", "weight": 1},
+        {"check": "min_holdout_f1", "args": {"value": 0.55}, "group": "final", "weight": 1}
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C6_duplicates",
+      "title": "8% duplicated rows",
+      "input": {"dataset": "signal_duplicates.csv", "target": "label", "budget": 6},
+      "expected_behavior": "Detect and drop duplicate rows before splitting (otherwise copies leak into the holdout).",
+      "criteria": [
+        {"check": "issue_detected", "args": {"type": "duplicate_rows"}, "group": "intermediate", "weight": 1},
+        {"check": "repair_applied", "args": {"action": "drop_duplicates"}, "group": "intermediate", "weight": 1},
+        {"check": "completed", "group": "final", "weight": 1},
+        {"check": "min_holdout_f1", "args": {"value": 0.55}, "group": "final", "weight": 1}
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C7_invalid_labels",
+      "title": "1.5% invalid target labels",
+      "input": {"dataset": "signal_invalid_labels.csv", "target": "label", "budget": 6},
+      "expected_behavior": "Quarantine rows whose label is not 0/1 instead of crashing.",
+      "criteria": [
+        {"check": "issue_detected", "args": {"type": "invalid_labels"}, "group": "intermediate", "weight": 1},
+        {"check": "repair_applied", "args": {"action": "quarantine_invalid_labels"}, "group": "intermediate", "weight": 1},
+        {"check": "completed", "group": "final", "weight": 2}
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C8_flaky_worker",
+      "title": "Training worker fails 3 times",
+      "input": {"dataset": "signal_clean.csv", "target": "label", "budget": 6, "trainer_fail_times": 3},
+      "expected_behavior": "Retry failed fits, route around the failure and still finish with a good model.",
+      "criteria": [
+        {"check": "completed", "group": "final", "weight": 2},
+        {"check": "retried", "args": {"min": 1}, "group": "coordination", "weight": 1},
+        {"check": "min_holdout_f1", "args": {"value": 0.55}, "group": "final", "weight": 1}
+      ],
+      "pass_threshold": 0.75
+    },
+    {
+      "id": "C9_no_signal_budget",
+      "title": "No signal: do not waste the budget",
+      "input": {"dataset": "fraud_no_signal.csv", "target": "is_fraud", "budget": 8},
+      "expected_behavior": "Nothing beats ~3% PR-AUC; detect the plateau and stop early instead of spending all 8 experiments.",
+      "criteria": [
+        {"check": "completed", "group": "final", "weight": 1},
+        {"check": "early_stop", "group": "coordination", "weight": 2},
+        {"check": "no_leak_in_final", "args": {"max_pr_auc": 0.9}, "group": "final", "weight": 1}
+      ],
+      "pass_threshold": 1.0
+    }
+  ]
+}

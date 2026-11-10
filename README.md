@@ -7,6 +7,7 @@
 |---|---|---|
 | 1 | Scheduled Airflow DAG: 3 related tables → cleaned in parallel TaskGroups → merged → loaded into PostgreSQL → quality gate → EDA + models + export, all read back from the DB | [`lab/airflow/dags/fraud_etl_pipeline.py`](lab/airflow/dags/fraud_etl_pipeline.py) |
 | 2 | Modified LangGraph agent loop that trains/evaluates on the Part 1 output, with **2 new agents** and a **new conditional route**; updated live agent graph | [`solution/langgraph/graph.py`](solution/langgraph/graph.py), [`frontend/src/graph/simpleLoopConfig.ts`](frontend/src/graph/simpleLoopConfig.ts), [`scripts/run_part2_loop.py`](scripts/run_part2_loop.py) |
+| 3 (bonus) | Supervisor-routed multi-agent LangGraph system with repair/retry loops, a 9-case evaluation suite and a comparison against both baselines | [`part3/`](part3), [`part3/dashboard.html`](part3/dashboard.html) |
 | Setup | Docker Compose stack, Airflow image, dev container | [`infra/docker-compose.yml`](infra/docker-compose.yml), [`infra/Dockerfile.airflow`](infra/Dockerfile.airflow), [`.devcontainer/devcontainer.json`](.devcontainer/devcontainer.json) |
 
 ---
@@ -169,6 +170,82 @@ Loop: `data_scientist → data_quality_auditor → hypothesis_generator → ml_e
 
 ---
 
+## Part 3 (bonus) — Adaptive multi-agent system + evaluation suite
+
+**Code:** [`part3/adaptive_system.py`](part3/adaptive_system.py) (system), [`part3/baselines.py`](part3/baselines.py) (the two baselines), [`part3/eval/`](part3/eval) (test cases, datasets, runner, scoring).
+**Dashboard:** [`part3/dashboard.html`](part3/dashboard.html) (open in a browser) · full criteria tables in [`part3/eval/results.md`](part3/eval/results.md).
+
+```bash
+make part3-eval        # runs in a throwaway python:3.12 container; or: pip install -r requirements-assignment.txt && python -m part3.eval.run_eval
+```
+
+### The system
+
+A **supervisor** agent reads the shared state after every step and picks the next specialist; every specialist reports back to it. The route is decided at run time from intermediate results.
+
+```mermaid
+graph TD
+  START([start]) --> S{supervisor}
+  S -.-> V[validator] --> S
+  S -.-> R[data_repair] --> S
+  S -.-> A[auditor] --> S
+  S -.-> P[planner] --> S
+  S -.-> T[trainer] --> S
+  S -.-> TR[trainer_repair] --> S
+  S -.-> TT[threshold_tuner] --> S
+  S -.-> E[evaluator] --> S
+  S -.-> F[finalize] --> S
+  S -. done .-> END([end])
+```
+
+| Agent | Responsibility | Adapts by |
+|---|---|---|
+| supervisor | routes to the next agent from the state | choosing a different path per input |
+| validator | invalid labels, numeric contamination ("987 note:11"), duplicates, fatal problems | sending fixable issues to repair, stopping on fatal ones |
+| data_repair | quarantine bad labels, coerce numerics, drop duplicates | **re-validation loop** (retry the gate, max 2 rounds) |
+| auditor | leakage by single-feature ROC-AUC, id columns, imbalance (reused from Part 2) | turning the tuner on/off, dropping leaky columns by evidence |
+| planner | explore one model per family, then refine the best family | following results instead of a fixed list |
+| trainer | fit + validation score | — |
+| trainer_repair | reads the error: same spec (transient), smaller model, or safe fallback | **retrying failed steps** (max 2 per experiment) |
+| threshold_tuner | F1-optimal threshold, imbalanced data only | skipped on balanced data |
+| evaluator | keeps the best model, detects plateaus | **early stop** when nothing improves |
+| finalize | one scoring of the best model on the sealed holdout | — |
+
+### Evaluation suite
+
+9 test cases in [`part3/eval/cases.json`](part3/eval/cases.json). Each one specifies the **input** (dataset, target, budget, injected fault), the **expected behavior**, weighted **scoring criteria** grouped as *intermediate* (e.g. was the leak / junk / duplicate detected and repaired), *final* (completed, holdout F1, no leakage in the result) and *coordination* (tuner routed correctly, retries, early stop), and a **pass threshold** on the weighted score. Faults are injected identically for all three systems.
+
+| System | Cases passed | Intermediate checks | Final checks | Coordination checks | Mean holdout F1 (signal cases) | Experiments | Runtime |
+|---|---|---|---|---|---|---|---|
+| **Adaptive multi-agent (Part 3)** | **9/9** | 100% | 100% | 100% | **0.664** | 36 | 37.9 s |
+| Class agent loop (baseline 2) | 3/9 | 22% | 71% | 50% | 0.302 | 50 | 13.2 s |
+| Fixed Airflow workflow (baseline 1) | 2/9 | 11% | 59% | 50% | 0.183 | 7 | 3.4 s |
+
+Runtimes are from a Linux machine. Inside Docker Desktop on my Mac (`make part3-eval`) the same suite took several minutes (adaptive 15–180 s per case) with identical pass/fail results; see `screenshots/part3_eval_terminal.png`.
+
+![Part 3 evaluation run](screenshots/part3_eval_terminal.png)
+
+| Case | Adaptive | Class loop | Fixed Airflow |
+|---|---|---|---|
+| C1 leaky column (known name) | ✅ F1 0.06 | ✅ F1 0.05 | ✅ F1 0.07 |
+| C2 leaky column renamed upstream | ✅ dropped by evidence | ❌ kept the leak | ❌ trained on the leak, F1 **1.00** |
+| C3 balanced Titanic | ✅ F1 0.74, tuner skipped | ✅ F1 0.76 | ✅ F1 0.70 |
+| C4 imbalanced data with signal | ✅ F1 **0.67** | ❌ F1 0.24 | ❌ F1 0.24 |
+| C5 junk strings in a numeric column | ✅ repaired, F1 0.63 | ❌ F1 0.26 | ❌ F1 0.22 |
+| C6 8% duplicated rows | ✅ removed, F1 0.67 | ❌ not detected | ❌ not detected |
+| C7 1.5% invalid labels | ✅ quarantined, F1 0.72 | ❌ crashed | ❌ crashed |
+| C8 worker fails 3 times | ✅ retried, F1 0.67 | ✅ recovered, F1 0.43 | ❌ failed after 2 retries |
+| C9 no signal, budget 8 | ✅ early stop after 3 | ❌ used all 8 | ❌ no stop decision |
+
+### Comparison summary
+
+* **Fixed Airflow workflow (baseline 1)** is the fastest and fully predictable, which is what you want for ETL. But every decision is hard-coded: it only catches the leak when it has the exact name it was written for (C2: F1 = 1.00 from a leak), it has no data checks (C5–C7), and its retries re-run the same code, so a failure that outlasts 2 retries kills the run (C8).
+* **Class agent loop (baseline 2)** adds iteration and a judge, and survives transient errors (C8). Without an LLM key its heuristics keep tuning logistic regression and never try a different family, so it reaches only F1 0.24 where 0.67 is possible (C4). It has no data validation, crashes on invalid labels (C7), and spends its whole budget even when nothing improves (C9).
+* **Adaptive system (Part 3)** passes all 9 cases and more than doubles the mean F1 on the cases that have real signal (0.66 vs 0.30 and 0.18). It runs fewer experiments than the class loop (36 vs 50) because it stops on plateaus. It costs more wall-clock time (~4 s per run, against ~1.5 s and ~0.4 s) because it explores more model families.
+* **Limitations:** the test cases target the failure modes this system was designed for, so the score gap partly reflects missing features in the baselines rather than skill on unseen problems. The class loop was evaluated in heuristic mode (no LLM key). The supervisor is a rule-based policy; replacing it with an LLM router is a natural next step. LangSmith tracing can be enabled with `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY`, since LangGraph traces automatically.
+
+---
+
 ## Screenshots
 
 | File | Shows |
@@ -178,6 +255,8 @@ Loop: `data_scientist → data_quality_auditor → hypothesis_generator → ml_e
 | `screenshots/airflow_model_metrics.png` | XCom of `train_models_from_db` (model evaluation) |
 | `screenshots/agent_graph.png` | live agent graph with the new agents (`/solution-loop`) |
 | `screenshots/agent_results.png` | agent loop results (best F1 / holdout metrics) |
+| `screenshots/part3_eval_terminal.png` | Part 3 evaluation suite: 3 systems × 9 cases, pass/fail per case |
+| `screenshots/part3_dashboard.png` | Part 3 dashboard (`part3/dashboard.html`) |
 
 ## Repository changes at a glance
 
@@ -190,4 +269,6 @@ infra/Dockerfile.airflow                 MOD   + matplotlib
 .devcontainer/devcontainer.json          NEW   dev container
 requirements-assignment.txt              NEW   host / dev-container packages
 reports/part1, reports/part2             NEW   generated results
+part3/                                   NEW   Part 3 adaptive system, baselines, eval suite, dashboard
+Makefile                                 MOD   + part3-eval target
 ```

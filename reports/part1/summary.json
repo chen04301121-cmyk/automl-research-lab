@@ -1,5 +1,5 @@
 {
-  "run_ts": "20261109T191157",
+  "run_ts": "20261109T000000",
   "rows_in_db": 10000,
   "quality_checks": {
     "completeness_rows_loaded_equal_rows_sent": true,
@@ -8,7 +8,7 @@
     "completeness_no_null_amount": true
   },
   "merge": {
-    "path": "/repo/artifacts/airflow/fraud_runs/20261109T191157/merged.csv",
+    "path": "/repo/artifacts/airflow/fraud_runs/20261109T000000/merged.csv",
     "n_rows": 10000,
     "n_columns": 52,
     "unmatched_customers": 0,
