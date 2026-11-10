@@ -225,6 +225,8 @@ Runtimes are from a Linux machine. Inside Docker Desktop on my Mac (`make part3-
 
 ![Part 3 evaluation run](screenshots/part3_eval_terminal.png)
 
+![Part 3 dashboard](screenshots/part3_dashboard.png)
+
 | Case | Adaptive | Class loop | Fixed Airflow |
 |---|---|---|---|
 | C1 leaky column (known name) | ✅ F1 0.06 | ✅ F1 0.05 | ✅ F1 0.07 |
