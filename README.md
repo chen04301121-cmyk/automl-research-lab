@@ -173,7 +173,7 @@ Loop: `data_scientist → data_quality_auditor → hypothesis_generator → ml_e
 ## Part 3 (bonus) — Adaptive multi-agent system + evaluation suite
 
 **Code:** [`part3/adaptive_system.py`](part3/adaptive_system.py) (system), [`part3/baselines.py`](part3/baselines.py) (the two baselines), [`part3/eval/`](part3/eval) (test cases, datasets, runner, scoring).
-**Dashboard:** [`part3/dashboard.html`](part3/dashboard.html) (open in a browser) · full criteria tables in [`part3/eval/results.md`](part3/eval/results.md).
+**Dashboard:** [live page](https://chen04301121-cmyk.github.io/automl-research-lab/part3/dashboard.html) (source: [`part3/dashboard.html`](part3/dashboard.html)) · full criteria tables in [`part3/eval/results.md`](part3/eval/results.md).
 
 ```bash
 make part3-eval        # runs in a throwaway python:3.12 container; or: pip install -r requirements-assignment.txt && python -m part3.eval.run_eval
